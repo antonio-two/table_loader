@@ -1,0 +1,14 @@
+[
+  {
+    "description": "ISO Code",
+    "mode": "REQUIRED",
+    "name": "COUNTRY_ISO_CODE",
+    "type": "STRING"
+  },
+  {
+    "description": "Country Name",
+    "mode": "REQUIRED",
+    "name": "COUNTRY_NAME",
+    "type": "STRING"
+  }
+]
