@@ -1,8 +1,8 @@
-##table_loader
+## table_loader
 
 table_loader helps you maintain static dimension data warehouse tables.
 
-##Schema example
+## Schema example
 ```json
 [
   {
@@ -20,7 +20,7 @@ table_loader helps you maintain static dimension data warehouse tables.
 ]
 ```
 
-##Data Example
+## Data Example
 ```json
 {"COUNTRY_ISO":"GR", "COUNTRY_NAME": "Greece"}
 {"COUNTRY_ISO":"AF", "COUNTRY_NAME": "Afganistan"}
