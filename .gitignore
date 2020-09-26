@@ -1,3 +1,4 @@
 table_loader.egg-info/*
 __pycache__
 .idea
+.notes
