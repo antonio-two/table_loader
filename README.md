@@ -31,5 +31,3 @@ table_loader helps you maintain static dimension data warehouse tables.
 + [Schema Components](https://cloud.google.com/bigquery/docs/schemas#schema_components)
 + [Loading json](https://cloud.google.com/bigquery/docs/loading-data-cloud-storage-json)
 + [Poetry](https://python-poetry.org/docs/)
-
-
