@@ -1,53 +1,62 @@
+import logging
 import os
 from uuid import uuid1
 
 import pytest
 from google.cloud import bigquery
+from table_loader import cli
 
-PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
-DATASET_ID = str(uuid1()).partition("-")[0]
-DATASET = f"{PROJECT_ID}.{DATASET_ID}"
-TIMEOUT = 30
+logger = logging.getLogger(__name__)
 
 
 @pytest.fixture(scope="session")
-def session_fixture():
-    # Create the empty test dataset
-    client = bigquery.Client()
-    datasets = list(client.list_datasets())
-    for dataset in datasets:
-        if dataset.dataset_id == DATASET_ID:
-            # Should we do this or break the test?
-            client.delete_dataset(dataset=DATASET_ID, timeout=TIMEOUT)
-            break
+def project_id():
+    return os.getenv("GOOGLE_CLOUD_PROJECT")
 
-    dataset = bigquery.Dataset(f"{PROJECT_ID}.{DATASET_ID}")
-    client.create_dataset(dataset=dataset, timeout=TIMEOUT)
-    print(f"Created dataset {DATASET}")
-    yield dataset
+
+@pytest.fixture(scope="session")
+def dataset_id(project_id):
+    # Create the empty test dataset
+    dataset = str(uuid1()).partition("-")[0]
+    dataset_id = f"{project_id}.{dataset}"
+    client = bigquery.Client()
+    client.create_dataset(dataset=dataset_id)
+    logger.info(f"Created dataset `{dataset}` in project `{project_id}`")
+
+    yield dataset_id
 
     # Tear down the emtpy test dataset
-    client.delete_dataset(dataset=dataset, timeout=TIMEOUT)
-    print(f"Deleting dataset {DATASET}")
+    client.delete_dataset(dataset=dataset_id, delete_contents=True)
+    logger.info(f"Deleting dataset `{dataset}` from project `{project_id}`")
 
 
 @pytest.fixture(scope="function")
-def function_fixture():
+def standard_table(tmpdir, dataset_id: str):
 
-    test_data_path = os.path.join("projects", PROJECT_ID, "test_data")
-    if os.path.exists(test_data_path):
-        os.rmdir(test_data_path)
+    project_id, _, dataset_name = dataset_id.partition(".")
+    dataset_dir = tmpdir.join("projects", project_id, dataset_name)
+    table_name = "standard_table"
 
-    os.mkdir(test_data_path)
+    dataset_dir.join(f"{table_name}.json").write(
+        """[{"description": "test description", "mode": "required", "name": "id", "type": "int64"}]""",
+        ensure=True,
+    )
+    logger.info(f"Created table `{table_name}`")
 
-    yield test_data_path
-    os.rmdir(test_data_path)
+    dataset_dir.join(f"{table_name}.jsonl").write("""{"id":10}\n""")
+    logger.info(f"Inserted one row into table `{table_name}`")
+
+    yield f"{dataset_id}.{table_name}"
 
 
-def test_load_table1(session_fixture, function_fixture):
-    print("test_load_table1")
+def test_load_table(tmpdir, standard_table):
+    os.chdir(tmpdir)
+    cli.main()
 
+    client = bigquery.Client()
+    job = client.query(f"select sum(id) as id_count from `{standard_table}`")
 
-# def test_load_table2(session_fixture):
-#     print('test_load_table2')
-#     # raise ValueError()
+    result = job.result()
+
+    for r in result:
+        logger.info(r)

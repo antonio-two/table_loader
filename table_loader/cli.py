@@ -149,6 +149,8 @@ def load_table(table_id: str, schema_path: str, data_path: str):
 
 
 def main():
+    # TODO insert to a table with a new column
+
     tables = get_tables()
 
     for table_id, files in tables.items():
