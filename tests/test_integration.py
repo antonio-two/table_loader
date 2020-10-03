@@ -60,3 +60,122 @@ def test_load_table(tmpdir, standard_table):
 
     for r in result:
         logger.info(r)
+
+
+def test_new_table():
+    """
+    preferred exists, last_known !exist, current !exist
+        1. upload preferred -> last_known
+        2. load -> current
+        3. download current info -> last_known
+        if it breaks at any stage, retry failed stage [x] times, before failing permanently
+        then reset the last_known and current states
+    :return:
+    """
+    pass
+
+
+def test_existing_table_no_change():
+    """
+    preferred exists, last_known exists, current exists
+        1. last_known modified = current modified
+        2. preferred schema_crc = last_known schema_crc
+        3. preferred data_crc = last_known data_crc
+        if it breaks at any stage, retry failed stage [x] times, before failing permanently
+        no need to do anything else as we're only executing comparison operations
+    :return:
+    """
+    pass
+
+
+def test_existing_table_data_change():
+    """
+    preferred exists, last_known exists, current exists
+        1. last_known modified = current modified
+        2. preferred schema_crc = last_known schema_crc
+        3. preferred data_crc != last_known data_crc
+            1. upload preferred -> last_known
+            2. make current backup
+            3. load truncate -> current
+            4. preferred row_num = current row_num (optional?)
+            5. download current info -> last_known
+            6. remove backup
+        if it breaks at any stage, retry failed stage [x] times, before failing permanently
+        then reset the last_known and current states
+    :return:
+    """
+    pass
+
+
+def test_existing_table_schema_change():
+    """
+    preferred exists, last_known exists, current exists
+        1. last_known modified = current modified
+        2. preferred schema_crc != last_known schema_crc
+            1. upload preferred -> last_known
+            2. make current backup
+            3. load truncate -> current
+            4. preferred row_num = current row_num (optional?)
+            5. download current info -> last_known
+            6. remove backup
+        if it breaks at any stage, retry failed stage [x] times, before failing permanently
+        then reset the last_known and current states
+    :return:
+    """
+    pass
+
+
+def test_existing_dropped_current_no_change():
+    """
+    preferred exists, last_known exists, current !exist
+    :return:
+    """
+    pass
+
+
+def test_existing_dropped_current_schema_change():
+    """
+
+    :return:
+    """
+    pass
+
+
+def test_existing_dropped_current_data_change():
+    """
+
+    :return:
+    """
+    pass
+
+
+def test_existing_dropped_last_known_no_change():
+    """
+
+    :return:
+    """
+    pass
+
+
+def test_existing_dropped_last_known_schema_change():
+    """
+
+    :return:
+    """
+    pass
+
+
+def test_existing_dropped_last_known_data_change():
+    """
+
+    :return:
+    """
+    pass
+
+
+def test_existing_dropped_preferred():
+    """
+
+    :return:
+    """
+    pass

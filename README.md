@@ -1,33 +1,28 @@
-## table_loader
+## What does table_loader do?
 
-table_loader helps you maintain static dimension data warehouse tables.
+table_loader helps you effortlessly maintain static dimension data warehouse tables by managing 3 data states:
++ The "preferred" state (or what's in the local directory)
++ The "last known applied" state (or what's in the bucket)
++ The "current" state (what is in the dataset)
 
-## Schema example
-```json
-[
-  {
-    "description": "ISO Code",
-    "mode": "REQUIRED",
-    "name": "COUNTRY_ISO_CODE",
-    "type": "STRING"
-  },
-  {
-    "description": "Country Name",
-    "mode": "REQUIRED",
-    "name": "COUNTRY_NAME",
-    "type": "STRING"
-  }
-]
+```python
+table_loader --bucket_prefix='gs://your-bucket-name'
 ```
 
-## Data Example
-```json
-{"COUNTRY_ISO":"GR", "COUNTRY_NAME": "Greece"}
-{"COUNTRY_ISO":"AF", "COUNTRY_NAME": "Afganistan"}
-{"COUNTRY_ISO":"ES", "COUNTRY_NAME": "Spain"}
+## Directory Structure
+```
+projects
+|-- some_dataset_name
+|   |-- table_schema.json
+|   |-- table_data.jsonl
+|   |-- some_other_table.json
+|   |-- some_other_data.jsonl
+|-- some_other_dataset
+|   |-- ...schema.json
+|   |-- ...etc
 ```
 
-### Dev Links
-+ [Schema Components](https://cloud.google.com/bigquery/docs/schemas#schema_components)
-+ [Loading json](https://cloud.google.com/bigquery/docs/loading-data-cloud-storage-json)
-+ [Poetry](https://python-poetry.org/docs/)
+## Run tests
+```python
+pytest --log-cli-level DEBUG
+```
