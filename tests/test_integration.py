@@ -1,5 +1,8 @@
+import copy
+import json
 import logging
 import os
+import typing
 from uuid import uuid1
 
 import pytest
@@ -30,152 +33,259 @@ def dataset_id(project_id):
     logger.info(f"Deleting dataset `{dataset}` from project `{project_id}`")
 
 
+@pytest.fixture(scope="session")
+def table_id(dataset_id):
+    return f"{dataset_id}.standard_table"
+
+
 @pytest.fixture(scope="function")
-def standard_table(tmpdir, dataset_id: str):
-
-    project_id, _, dataset_name = dataset_id.partition(".")
-    dataset_dir = tmpdir.join("projects", project_id, dataset_name)
-    table_name = "standard_table"
-
-    dataset_dir.join(f"{table_name}.json").write(
-        """[{"description": "test description", "mode": "required", "name": "id", "type": "int64"}]""",
-        ensure=True,
-    )
-    logger.info(f"Created table `{table_name}`")
-
-    dataset_dir.join(f"{table_name}.jsonl").write("""{"id":10}\n""")
-    logger.info(f"Inserted one row into table `{table_name}`")
-
-    yield f"{dataset_id}.{table_name}"
+def preferred_dir(tmpdir):
+    return tmpdir / str(uuid1()).partition("-")[0]
 
 
-def test_load_table(tmpdir, standard_table):
-    os.chdir(tmpdir)
-    cli.main()
+SCHEMA_01 = [
+    {"description": "S_ID", "mode": "REQUIRED", "name": "S_ID", "type": "INTEGER"}
+]
+SCHEMA_02 = [
+    {"description": "S_ID", "mode": "REQUIRED", "name": "S_ID", "type": "INTEGER"},
+    {"description": "S_NAME", "mode": "REQUIRED", "name": "S_NAME", "type": "STRING"},
+]
+SCHEMA_03 = [
+    {"description": "S_NAME", "mode": "REQUIRED", "name": "S_NAME", "type": "STRING"}
+]
 
+DATA_01 = [{"S_ID": 1}]
+DATA_02 = [{"S_ID": 1, "S_NAME": "ONE"}]
+DATA_03 = [{"S_NAME": "ONE"}]
+DATA_04 = [{"S_ID": 2}, {"S_ID": 3}]
+DATA_05 = [{"S_ID": 2, "S_NAME": "TWO"}, {"S_ID": 3, "S_NAME": "THREE"}]
+DATA_06 = [{"S_NAME": "TWO"}, {"S_NAME": "THREE"}]
+
+
+def create_preferred_data(workdir, schema, table_id, data):
+    """
+    Creating preferred schema, table and data
+    """
+    project_id, dataset_name, table_name = table_id.split(".")
+    dataset_dir = workdir.join("projects", project_id, dataset_name)
+
+    logger.info(f"Writing schema and data to {dataset_dir}")
+
+    schema_json = json.dumps(schema)
+    dataset_dir.join(f"{table_name}.json").write(schema_json, ensure=True)
+
+    data_jsonl = "\n".join(json.dumps(f) for f in data)
+    dataset_dir.join(f"{table_name}.jsonl").write(data_jsonl, ensure=True)
+
+
+def assert_current_data(
+    schema: typing.List[typing.Dict[str, str]],
+    table_id: str,
+    data: typing.List[typing.Dict[str, typing.Any]],
+):
+    """
+    Asserting preferred and current data match
+    """
     client = bigquery.Client()
-    job = client.query(f"select sum(id) as id_count from `{standard_table}`")
 
-    result = job.result()
+    preferred_table = bigquery.Table(table_id, schema=schema)
+    current_table: bigquery.Table = client.get_table(table_id)
 
-    for r in result:
-        logger.info(r)
+    assert current_table.schema == preferred_table.schema
 
+    query_job = f"SELECT * FROM `{table_id}`"
+    logger.info(f"Executing query: {query_job}")
+    result = client.query(query_job)
+    logger.info(f"Result: {result}")
 
-def test_new_table():
-    """
-    preferred exists, last_known !exist, current !exist
-        1. upload preferred -> last_known
-        2. load -> current
-        3. download current info -> last_known
-        if it breaks at any stage, retry failed stage [x] times, before failing permanently
-        then reset the last_known and current states
-    :return:
-    """
-    pass
+    data = copy.copy(data)
 
+    for row in result:
+        row = dict(row)
+        logger.info(f"Checking row: {row}")
+        assert row in data
+        data.remove(row)
 
-def test_existing_table_no_change():
-    """
-    preferred exists, last_known exists, current exists
-        1. last_known modified = current modified
-        2. preferred schema_crc = last_known schema_crc
-        3. preferred data_crc = last_known data_crc
-        if it breaks at any stage, retry failed stage [x] times, before failing permanently
-        no need to do anything else as we're only executing comparison operations
-    :return:
-    """
-    pass
+    assert not data
 
 
-def test_existing_table_data_change():
-    """
-    preferred exists, last_known exists, current exists
-        1. last_known modified = current modified
-        2. preferred schema_crc = last_known schema_crc
-        3. preferred data_crc != last_known data_crc
-            1. upload preferred -> last_known
-            2. make current backup
-            3. load truncate -> current
-            4. preferred row_num = current row_num (optional?)
-            5. download current info -> last_known
-            6. remove backup
-        if it breaks at any stage, retry failed stage [x] times, before failing permanently
-        then reset the last_known and current states
-    :return:
-    """
-    pass
+def drop_table(table_id):
+    client = bigquery.Client()
+    client.delete_table(table_id, not_found_ok=True)
 
 
-def test_existing_table_schema_change():
-    """
-    preferred exists, last_known exists, current exists
-        1. last_known modified = current modified
-        2. preferred schema_crc != last_known schema_crc
-            1. upload preferred -> last_known
-            2. make current backup
-            3. load truncate -> current
-            4. preferred row_num = current row_num (optional?)
-            5. download current info -> last_known
-            6. remove backup
-        if it breaks at any stage, retry failed stage [x] times, before failing permanently
-        then reset the last_known and current states
-    :return:
-    """
-    pass
+class TestExpectedUseCases:
+    # TODO: logging -> caplog
+    @staticmethod
+    def test_new_table(preferred_dir, table_id):
+        """
+        A new table is added
+        pytest tests/test_integration.py::TestExpectedUseCases::test_new_table --log-cli-level=INFO
+        """
+        logger.info(f"Test local directory: {preferred_dir}")
+        schema, data = SCHEMA_01, DATA_01
+        create_preferred_data(
+            workdir=preferred_dir, schema=schema, table_id=table_id, data=data
+        )
+        os.chdir(preferred_dir)
+        logger.info("Executing table_loader")
+        cli.main()
+
+        assert_current_data(schema=schema, table_id=table_id, data=data)
+
+    @staticmethod
+    def test_existing_table_no_change(preferred_dir, table_id):
+        """
+        Table exists. There is no change in schema/data
+        pytest tests/test_integration.py::TestExpectedUseCases::test_existing_table_no_change --log-cli-level=INFO
+        """
+        schema, data = SCHEMA_01, DATA_01
+        create_preferred_data(
+            workdir=preferred_dir, schema=schema, table_id=table_id, data=data
+        )
+        os.chdir(preferred_dir)
+        cli.main()
+
+        client = bigquery.Client()
+        table_properties = client.get_table(table=table_id)
+        modified_before = table_properties.modified
+
+        cli.main()
+        table_properties = client.get_table(table=table_id)
+        modified_after = table_properties.modified
+
+        logger.info(
+            f"modified_before={modified_before}, modified_after={modified_after}"
+        )
+
+        assert modified_before == modified_after
+
+    @staticmethod
+    def test_existing_table_data_change(preferred_dir, table_id):
+        """
+        Table exists -> data is added to the table directly -> table_loader executes
+        pytest tests/test_integration.py::TestExpectedUseCases::test_existing_table_data_change --log-cli-level=INFO
+        """
+        schema, data = SCHEMA_01, DATA_01
+        create_preferred_data(
+            workdir=preferred_dir, schema=schema, table_id=table_id, data=data
+        )
+        os.chdir(preferred_dir)
+        cli.main()
+
+        client = bigquery.Client()
+        client.insert_rows_json(table=table_id, json_rows=DATA_04)
+
+        assert_current_data(schema=schema, table_id=table_id, data=data)
+
+    @staticmethod
+    def test_existing_table_schema_change(preferred_dir, table_id):
+        """
+        Table exists -> someone adds a column to the table directly -> table_loader executes
+        pytest tests/test_integration.py::TestExpectedUseCases::test_existing_table_schema_change --log-cli-level=INFO
+        """
+        schema, data = SCHEMA_01, DATA_01
+        create_preferred_data(
+            workdir=preferred_dir, schema=schema, table_id=table_id, data=data
+        )
+        os.chdir(preferred_dir)
+        cli.main()
+
+        client = bigquery.Client()
+        table = client.get_table(table=table_id)
+        original_schema = table.schema
+        logger.info(f"original schema: {original_schema}")
+        new_schema = original_schema[:]
+        new_schema.append(bigquery.SchemaField("NEW_COLUMN", "STRING"))
+        logger.info(f"new schema: {new_schema}")
+
+        table.schema = new_schema
+        table = client.update_table(table, ["schema"])
+
+        if len(table.schema) == len(original_schema) + 1 == len(new_schema):
+            logger.info("A new column has been added.")
+        else:
+            logger.info("The column has not been added.")
+
+        cli.main()
+
+        assert_current_data(schema=schema, table_id=table_id, data=data)
+
+    @staticmethod
+    def test_dropped_preferred_table(preferred_dir, table_id):
+        """
+        Table exists -> local definitions are deleted -> table_loader executes
+        pytest tests/test_integration.py::TestExpectedUseCases::test_dropped_preferred_table --log-cli-level=INFO
+        """
+        schema, data = SCHEMA_01, DATA_01
+        create_preferred_data(
+            workdir=preferred_dir, schema=schema, table_id=table_id, data=data
+        )
+        os.chdir(preferred_dir)
+        cli.main()
+
+        _, _, table_name = table_id
+        schema_filename = os.path.join(preferred_dir, table_name, ".json")
+        data_filename = os.path.join(preferred_dir, table_name, ".jsonl")
+
+        os.remove(schema_filename, data_filename)
+        cli.main()
+
+        # What do we assert here?
 
 
-def test_existing_dropped_current_no_change():
-    """
-    preferred exists, last_known exists, current !exist
-    :return:
-    """
-    pass
+class TestEdgeUseCases:
+    @staticmethod
+    def test_disparate_schema_data(preferred_dir, table_id):
+        """
+        Table exists -> table is dropped -> schema is changed -> table_loader executes
+        No need to simulate a table drop, just a disparate schema/data
+        Change the implementation to deal with partial schema/data matches or make it a valid failure
+        Preferably the latter
+        """
+        schema, data = SCHEMA_02, DATA_01
+        create_preferred_data(
+            workdir=preferred_dir, schema=schema, table_id=table_id, data=data
+        )
+        os.chdir(preferred_dir)
+        cli.main()
 
+        assert_current_data(schema=schema, table_id=table_id, data=data)
 
-def test_existing_dropped_current_schema_change():
-    """
+    @staticmethod
+    def test_adding_rows_to_table_and_dropping_it(preferred_dir, table_id):
+        """
+        Table exists -> extra rows are added -> table is dropped -> table_loader executes
+        This makes no sense but coding it anyway for fun
+        """
+        schema, data = SCHEMA_01, DATA_01
+        create_preferred_data(
+            workdir=preferred_dir, schema=schema, table_id=table_id, data=data
+        )
+        os.chdir(preferred_dir)
+        cli.main()
 
-    :return:
-    """
-    pass
+        client = bigquery.Client()
+        client.insert_rows_json(table=table_id, json_rows=DATA_04)
+        client.delete_table(table_id, not_found_ok=True)
+        cli.main()
 
+        assert_current_data(schema=schema, table_id=table_id, data=data)
 
-def test_existing_dropped_current_data_change():
-    """
+    @staticmethod
+    def test_dropped_table(preferred_dir, table_id):
+        """
+        Table exists -> table is dropped -> table_loader executes
+        test_new_table
+        """
+        schema, data = SCHEMA_01, DATA_01
+        create_preferred_data(
+            workdir=preferred_dir, schema=schema, table_id=table_id, data=data
+        )
+        os.chdir(preferred_dir)
+        cli.main()
 
-    :return:
-    """
-    pass
+        drop_table(table_id)
+        cli.main()
 
-
-def test_existing_dropped_last_known_no_change():
-    """
-
-    :return:
-    """
-    pass
-
-
-def test_existing_dropped_last_known_schema_change():
-    """
-
-    :return:
-    """
-    pass
-
-
-def test_existing_dropped_last_known_data_change():
-    """
-
-    :return:
-    """
-    pass
-
-
-def test_existing_dropped_preferred():
-    """
-
-    :return:
-    """
-    pass
+        assert_current_data(schema=schema, table_id=table_id, data=data)
