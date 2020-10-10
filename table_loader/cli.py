@@ -48,19 +48,6 @@ class FileFormatError(Exception):
         return f"{self.value} is not well formed"
 
 
-# class VendorMeta:
-#     def __init__(self, vendor):
-#         self.vendor = vendor
-#         self.supported_vendors = ['bigquery']
-#
-#
-# class DataMeta:
-#     def __init__(self, table_id: str, files: list):
-#         self.table_id = table_id
-#         self.files = files
-#         self.supported_extensions = ['json', 'jsonl']
-
-
 def get_tables() -> typing.Dict[str, typing.List[str]]:
     projects = os.path.join(os.getcwd(), "projects")
     tables = dict()
@@ -149,7 +136,6 @@ def load_table(table_id: str, schema_path: str, data_path: str):
 
 
 def main():
-    # TODO insert to a table with a new column
 
     tables = get_tables()
 
