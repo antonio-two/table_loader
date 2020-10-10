@@ -2,7 +2,6 @@ import json
 import os
 import os.path
 import typing
-
 from google.cloud import bigquery
 
 

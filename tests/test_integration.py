@@ -5,6 +5,7 @@ import os
 import typing
 from uuid import uuid1
 
+import py._path.local as local_path
 import pytest
 from google.cloud import bigquery
 from table_loader import cli
@@ -18,7 +19,7 @@ def project_id():
 
 
 @pytest.fixture(scope="session")
-def dataset_id(project_id):
+def dataset_id(project_id: str):
     # Create the empty test dataset
     dataset = str(uuid1()).partition("-")[0]
     dataset_id = f"{project_id}.{dataset}"
@@ -34,12 +35,12 @@ def dataset_id(project_id):
 
 
 @pytest.fixture(scope="session")
-def table_id(dataset_id):
+def table_id(dataset_id: str):
     return f"{dataset_id}.standard_table"
 
 
 @pytest.fixture(scope="function")
-def preferred_dir(tmpdir):
+def preferred_dir(tmpdir: local_path.LocalPath):
     return tmpdir / str(uuid1()).partition("-")[0]
 
 
@@ -62,20 +63,25 @@ DATA_05 = [{"S_ID": 2, "S_NAME": "TWO"}, {"S_ID": 3, "S_NAME": "THREE"}]
 DATA_06 = [{"S_NAME": "TWO"}, {"S_NAME": "THREE"}]
 
 
-def create_preferred_data(workdir, schema, table_id, data):
-    """
-    Creating preferred schema, table and data
-    """
+def create_preferred_data(workdir, table_id, data):
     project_id, dataset_name, table_name = table_id.split(".")
-    dataset_dir = workdir.join("projects", project_id, dataset_name)
+    projects = workdir.join("projects")
+    dataset_dir = projects.join(project_id, dataset_name)
+    data_jsonl = "\n".join(json.dumps(f) for f in data)
+    dataset_dir.join(f"{table_name}.jsonl").write(data_jsonl, ensure=True)
 
-    logger.info(f"Writing schema and data to {dataset_dir}")
 
+def create_preferred_schema(workdir, table_id, schema):
+    project_id, dataset_name, table_name = table_id.split(".")
+    projects = workdir.join("projects")
+    dataset_dir = projects.join(project_id, dataset_name)
     schema_json = json.dumps(schema)
     dataset_dir.join(f"{table_name}.json").write(schema_json, ensure=True)
 
-    data_jsonl = "\n".join(json.dumps(f) for f in data)
-    dataset_dir.join(f"{table_name}.jsonl").write(data_jsonl, ensure=True)
+
+def create_preferred_empty(workdir):
+    projects = workdir.join("projects")
+    projects.ensure(dir=True)
 
 
 def assert_current_data(
@@ -120,13 +126,17 @@ class TestExpectedUseCases:
     def test_new_table(preferred_dir, table_id):
         """
         A new table is added
-        pytest tests/test_integration.py::TestExpectedUseCases::test_new_table --log-cli-level=INFO
+        pytest tests/test_integration.py::TestExpectedUseCases
+        ::test_new_table --log-cli-level=INFO
         """
         logger.info(f"Test local directory: {preferred_dir}")
         schema, data = SCHEMA_01, DATA_01
-        create_preferred_data(
-            workdir=preferred_dir, schema=schema, table_id=table_id, data=data
+        create_preferred_schema(
+            workdir=preferred_dir,
+            schema=schema,
+            table_id=table_id,
         )
+        create_preferred_data(workdir=preferred_dir, table_id=table_id, data=data)
         os.chdir(preferred_dir)
         logger.info("Executing table_loader")
         cli.main()
@@ -137,12 +147,16 @@ class TestExpectedUseCases:
     def test_existing_table_no_change(preferred_dir, table_id):
         """
         Table exists. There is no change in schema/data
-        pytest tests/test_integration.py::TestExpectedUseCases::test_existing_table_no_change --log-cli-level=INFO
+        pytest tests/test_integration.py::TestExpectedUseCases
+        ::test_existing_table_no_change --log-cli-level=INFO
         """
         schema, data = SCHEMA_01, DATA_01
-        create_preferred_data(
-            workdir=preferred_dir, schema=schema, table_id=table_id, data=data
+        create_preferred_schema(
+            workdir=preferred_dir,
+            schema=schema,
+            table_id=table_id,
         )
+        create_preferred_data(workdir=preferred_dir, table_id=table_id, data=data)
         os.chdir(preferred_dir)
         cli.main()
 
@@ -155,21 +169,77 @@ class TestExpectedUseCases:
         modified_after = table_properties.modified
 
         logger.info(
-            f"modified_before={modified_before}, modified_after={modified_after}"
+            f"modified_before={modified_before}, modified_after=" f"{modified_after}"
         )
 
         assert modified_before == modified_after
 
+    # TODO: new rows are added to the jsonl
+    # TODO: new columns are added to the jsonl - no columns added to json
+    # TODO: new columns are added to the jsonl - columns added to json too
+
     @staticmethod
-    def test_existing_table_data_change(preferred_dir, table_id):
+    def test_dropped_preferred_table(tmpdir: local_path.LocalPath, table_id):
         """
-        Table exists -> data is added to the table directly -> table_loader executes
-        pytest tests/test_integration.py::TestExpectedUseCases::test_existing_table_data_change --log-cli-level=INFO
+        Table exists -> local definitions are deleted -> table_loader executes
+        pytest tests/test_integration.py::TestExpectedUseCases::test_dropped_preferred_table --log-cli-level=INFO
         """
         schema, data = SCHEMA_01, DATA_01
-        create_preferred_data(
-            workdir=preferred_dir, schema=schema, table_id=table_id, data=data
-        )
+        wd_ = tmpdir / "wd1"
+        create_preferred_data(wd_, table_id=table_id, data=data)
+        create_preferred_schema(wd_, table_id=table_id, schema=schema)
+        os.chdir(preferred_dir)
+        cli.main()
+
+        workdir = tmpdir / "wd2"
+        create_preferred_empty(workdir=workdir)
+        os.chdir(workdir)
+        cli.main()
+
+        client = bigquery.Client()
+
+        with pytest.raises(Exception):
+            client.get_table(table=table_id)
+
+        # What do we assert here?
+
+
+class TestEdgeUseCases:
+    @staticmethod
+    def test_disparate_schema_data(
+        tmpdir: local_path.LocalPath, preferred_dir, table_id
+    ):
+        """
+        Table exists -> table is dropped -> schema is changed ->
+        table_loader executes
+        No need to simulate a table drop, just a disparate schema/data
+        Change the implementation to deal with partial schema/data matches
+        or make it a valid failure
+        Preferably the latter
+        """
+        schema, data = SCHEMA_02, DATA_01
+        wd_ = tmpdir / "wd1"
+        create_preferred_data(wd_, table_id=table_id, data=data)
+        create_preferred_schema(wd_, table_id=table_id, schema=schema)
+        os.chdir(preferred_dir)
+        cli.main()
+
+        assert_current_data(schema=schema, table_id=table_id, data=data)
+
+    @staticmethod
+    def test_existing_table_data_change(
+        tmpdir: local_path.LocalPath, preferred_dir, table_id
+    ):
+        """
+        Table exists -> data is added to the table directly -> table_loader
+        executes
+        pytest tests/test_integration.py::TestExpectedUseCases
+        ::test_existing_table_data_change --log-cli-level=INFO
+        """
+        schema, data = SCHEMA_01, DATA_01
+        wd_ = tmpdir / "wd1"
+        create_preferred_data(wd_, table_id=table_id, data=data)
+        create_preferred_schema(wd_, table_id=table_id, schema=schema)
         os.chdir(preferred_dir)
         cli.main()
 
@@ -179,15 +249,19 @@ class TestExpectedUseCases:
         assert_current_data(schema=schema, table_id=table_id, data=data)
 
     @staticmethod
-    def test_existing_table_schema_change(preferred_dir, table_id):
+    def test_existing_table_schema_change(
+        tmpdir: local_path.LocalPath, preferred_dir, table_id
+    ):
         """
-        Table exists -> someone adds a column to the table directly -> table_loader executes
-        pytest tests/test_integration.py::TestExpectedUseCases::test_existing_table_schema_change --log-cli-level=INFO
+        Table exists -> someone adds a column to the table directly ->
+        table_loader executes
+        pytest tests/test_integration.py::TestExpectedUseCases
+        ::test_existing_table_schema_change --log-cli-level=INFO
         """
         schema, data = SCHEMA_01, DATA_01
-        create_preferred_data(
-            workdir=preferred_dir, schema=schema, table_id=table_id, data=data
-        )
+        wd_ = tmpdir / "wd1"
+        create_preferred_data(wd_, table_id=table_id, data=data)
+        create_preferred_schema(wd_, table_id=table_id, schema=schema)
         os.chdir(preferred_dir)
         cli.main()
 
@@ -212,56 +286,18 @@ class TestExpectedUseCases:
         assert_current_data(schema=schema, table_id=table_id, data=data)
 
     @staticmethod
-    def test_dropped_preferred_table(preferred_dir, table_id):
+    def test_adding_rows_to_table_and_dropping_it(
+        tmpdir: local_path.LocalPath, preferred_dir, table_id
+    ):
         """
-        Table exists -> local definitions are deleted -> table_loader executes
-        pytest tests/test_integration.py::TestExpectedUseCases::test_dropped_preferred_table --log-cli-level=INFO
-        """
-        schema, data = SCHEMA_01, DATA_01
-        create_preferred_data(
-            workdir=preferred_dir, schema=schema, table_id=table_id, data=data
-        )
-        os.chdir(preferred_dir)
-        cli.main()
-
-        _, _, table_name = table_id
-        schema_filename = os.path.join(preferred_dir, table_name, ".json")
-        data_filename = os.path.join(preferred_dir, table_name, ".jsonl")
-
-        os.remove(schema_filename, data_filename)
-        cli.main()
-
-        # What do we assert here?
-
-
-class TestEdgeUseCases:
-    @staticmethod
-    def test_disparate_schema_data(preferred_dir, table_id):
-        """
-        Table exists -> table is dropped -> schema is changed -> table_loader executes
-        No need to simulate a table drop, just a disparate schema/data
-        Change the implementation to deal with partial schema/data matches or make it a valid failure
-        Preferably the latter
-        """
-        schema, data = SCHEMA_02, DATA_01
-        create_preferred_data(
-            workdir=preferred_dir, schema=schema, table_id=table_id, data=data
-        )
-        os.chdir(preferred_dir)
-        cli.main()
-
-        assert_current_data(schema=schema, table_id=table_id, data=data)
-
-    @staticmethod
-    def test_adding_rows_to_table_and_dropping_it(preferred_dir, table_id):
-        """
-        Table exists -> extra rows are added -> table is dropped -> table_loader executes
+        Table exists -> extra rows are added -> table is dropped ->
+        table_loader executes
         This makes no sense but coding it anyway for fun
         """
         schema, data = SCHEMA_01, DATA_01
-        create_preferred_data(
-            workdir=preferred_dir, schema=schema, table_id=table_id, data=data
-        )
+        wd_ = tmpdir / "wd1"
+        create_preferred_data(wd_, table_id=table_id, data=data)
+        create_preferred_schema(wd_, table_id=table_id, schema=schema)
         os.chdir(preferred_dir)
         cli.main()
 
@@ -273,15 +309,15 @@ class TestEdgeUseCases:
         assert_current_data(schema=schema, table_id=table_id, data=data)
 
     @staticmethod
-    def test_dropped_table(preferred_dir, table_id):
+    def test_dropped_table(tmpdir: local_path.LocalPath, preferred_dir, table_id):
         """
         Table exists -> table is dropped -> table_loader executes
         test_new_table
         """
         schema, data = SCHEMA_01, DATA_01
-        create_preferred_data(
-            workdir=preferred_dir, schema=schema, table_id=table_id, data=data
-        )
+        wd_ = tmpdir / "wd1"
+        create_preferred_data(wd_, table_id=table_id, data=data)
+        create_preferred_schema(wd_, table_id=table_id, schema=schema)
         os.chdir(preferred_dir)
         cli.main()
 
