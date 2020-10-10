@@ -1,12 +1,12 @@
 [
   {
-    "description": "ISO Code",
+    "description": "COUNTRY ISO CODE",
     "mode": "REQUIRED",
     "name": "COUNTRY_ISO_CODE",
     "type": "STRING"
   },
   {
-    "description": "Country Name",
+    "description": "COUNTRY NAME",
     "mode": "REQUIRED",
     "name": "COUNTRY_NAME",
     "type": "STRING"

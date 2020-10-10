@@ -1,0 +1,8 @@
+[
+  {
+    "description": "ID",
+    "mode": "REQUIRED",
+    "name": "OTHER_ID",
+    "type": "INTEGER"
+  }
+]

@@ -1,0 +1,8 @@
+[
+  {
+    "description": "ID",
+    "mode": "REQUIRED",
+    "name": "STATIC_ID",
+    "type": "INTEGER"
+  }
+]
