@@ -26,3 +26,19 @@ projects
 ```python
 pytest --log-cli-level DEBUG
 ```
+
+## Requirements
+
+### Functional
+ * If the user does something to the tables or other files, the client should be resilient
+ * We need to support the following actions:
+   * Create a table
+   * Delete a table
+   * Update a table in any way
+ * We should allow to have unmanaged tables next to managed tables without influencing them
+
+
+### User facing
+
+ * The user needs to provide a way to save data across executions (last known applied state)
+ * The user needs to provide a billing project to run against

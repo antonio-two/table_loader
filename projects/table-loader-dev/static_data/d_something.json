@@ -1,0 +1,14 @@
+[
+  {
+    "description": "SOME ISO CODE",
+    "mode": "REQUIRED",
+    "name": "SOME_ISO_CODE",
+    "type": "STRING"
+  },
+  {
+    "description": "SOME NAME",
+    "mode": "REQUIRED",
+    "name": "SOME_NAME",
+    "type": "STRING"
+  }
+]
