@@ -11,6 +11,8 @@ google-cloud-storage = "^1.31.2"
 crcmod = "^1.7"
 google-api-python-client = "^1.12.3"
 oauth2client = "<4.0.0"
+simplejson = "^3.17.2"
+
 #oauth2client = "^4.1.3"
 # This is throwing a lot of errors due to incorrectly set error levels
 # ModuleNotFoundError: No module named 'oauth2client.contrib.locked_file'

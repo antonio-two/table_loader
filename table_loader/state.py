@@ -7,7 +7,7 @@ import os
 import os.path
 import struct
 import typing
-
+from datetime import datetime
 import crcmod.predefined
 
 # import google.cloud.exceptions
@@ -21,25 +21,13 @@ DATA_EXT = "jsonl"
 
 # nolonger needed, we only need ONE project
 # PROJECTS = os.path.join(os.getcwd(), "projects")
+# get this from argparse
 PROJECT = "table-loader-dev"
 
 logger = logging.getLogger()
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s", level=logging.INFO
 )
-
-
-# class StateValue(typing.TypedDict, total=False):
-#     """
-#     schema is local, remote and current
-#     schema_crc32c is local, remote and current
-#     data_crc32c is local and remote
-#     info_crc32c is local, remote and current
-#     """
-#     schema: object
-#     schema_crc32c: str
-#     data_crc32c: str
-#     info_crc32c: str
 
 
 class PreferredState(typing.TypedDict, total=False):
@@ -51,21 +39,17 @@ class PreferredState(typing.TypedDict, total=False):
 
 class LastKnownAppliedState(typing.TypedDict, total=False):
     schema: object
-    schema_crc32: str
-    modified: str
+    schema_crc32c: str
+    schema_modified: datetime
+    data_crc32c: str
+    data_modified: datetime
 
 
 class CurrentState(typing.TypedDict, total=False):
     schema: object
-    schema_crc32: str
+    schema_crc32c: str
     num_rows: int
-    modified: str
-
-
-# removing this
-# class InfoStateValue(typing.TypedDict, total=False):
-#     num_rows: int
-#     modified: str
+    table_modified: datetime
 
 
 def make_crc32c(data: str):
@@ -81,6 +65,15 @@ def make_crc32c(data: str):
     crc32c = crcmod.predefined.Crc("crc-32c")
     crc32c.update(data.encode("utf-8"))
     return base64.b64encode(struct.pack(">I", crc32c.crcValue)).decode("utf-8")
+
+
+def json_from_bigquery_schema(schema_fields: bigquery.schema.SchemaField):
+    json_output: typing.List[dict] = []
+    for field in schema_fields:
+        json_output.append(
+            dict(sorted(field.to_api_repr().items(), key=lambda k: k[0]))
+        )
+    return json.dumps(json_output, indent=None)
 
 
 def get_preferred_state():
@@ -141,7 +134,6 @@ def get_last_known_applied_state(bucket_prefix: str):
     for blob in storage_client.list_blobs(bucket_or_name=bucket):
 
         blob_parts = blob.name.split("/")
-
         if not blob_parts[1] or not blob_parts[2]:
             continue
 
@@ -151,35 +143,30 @@ def get_last_known_applied_state(bucket_prefix: str):
         state_key = ".".join([project_dir, dataset_dir, table_name])
         state_value = last_known_applied_state[state_key]
 
+        modified = str(blob.updated)
+
         if blob.name.endswith(SCHEMA_EXT):
+            # do we need the schema if we have the crc?
+            state_value["schema"] = json.loads(blob.download_as_string())
             state_value["schema_crc32c"] = blob.crc32c
+            state_value["schema_modified"] = modified
+            # Do we need some date conversion magic here?
+            # maybe convert everything to UTC based on the location of the data?
+            # or just simply leave it for the user to make their own decision
 
         if blob.name.endswith(DATA_EXT):
             state_value["data_crc32c"] = blob.crc32c
+            state_value["data_modified"] = modified
 
     return last_known_applied_state
 
 
-def get_current_state(known_tables: typing.List[str]):
+# def get_current_state(known_tables: typing.List[str]):
+def get_current_state():
+
     current_state: typing.Dict[str, CurrentState] = collections.defaultdict(
         lambda: CurrentState()
     )
-
-    # Projects:
-    # - peaceful-joy
-    #   - dataset1
-    #     - table1
-    # - my_project_1
-    #   - dataset1
-    #     - table1
-    #     - unmanaged_tables
-    # - my_project_2
-    #   - dataset1
-    #     - table1
-    # - core_project
-    #
-    # select * from `peaceful-joy.dataset1.table1`
-    # table_loader --bucket-prefix gs://core_project_table_loader/
 
     bigquery_client = bigquery.Client(project=PROJECT)
     datasets = list(bigquery_client.list_datasets(project=PROJECT))
@@ -191,27 +178,15 @@ def get_current_state(known_tables: typing.List[str]):
                 for table in tables:
                     state_key = ".".join([PROJECT, dataset.dataset_id, table.table_id])
                     state_value = current_state[state_key]
-                    # TODO: figure out how to either get json from
-                    #  bigquery or convert the below to json
-                    state_value["schema"] = None
-                    state_value["schema_crc32c"] = make_crc32c("")
-
-                    # state_key and fully qualified table name are
-                    # the same
-                    # table_info = bigquery_client.get_table(state_key)
-                    # table_state_value = InfoStateValue()
-                    # table_state_value["num_rows"] = table_info.num_rows
-                    # # TODO: fix date format so it's comparable
-                    # table_state_value["modified"] = str(table_info.modified)
-                    #
-                    # state_value["data_crc32c"] = make_crc32c(
-                    #     json.dumps(table_state_value, indent=2)
-                    # )
+                    table_info = bigquery_client.get_table(state_key)
+                    state_value["schema"] = json_from_bigquery_schema(table_info.schema)
+                    state_value["schema_crc32c"] = make_crc32c(
+                        str(json_from_bigquery_schema(table_info.schema))
+                    )
+                    state_value["num_rows"] = table_info.num_rows
+                    state_value["table_modified"] = str(table_info.modified)
 
     return current_state
-
-
-current = {"num_rows": 10, "last_modified": "2020-10-08T10:15:54"}
 
 
 def decide_table_action(
@@ -219,6 +194,7 @@ def decide_table_action(
     last_known_applied_state: LastKnownAppliedState,
     current_state: CurrentState,
 ):
+    table_action: str = ""
     """
     WHAT: upload preferred -> last_known -> current
     WHEN: new table, schema change, data change
@@ -241,9 +217,39 @@ def decide_table_action(
     :param current_state:
     :return:
     """
-    logger.info(f"{preferred_state}\n\n{last_known_applied_state}\n\n{current_state}")
 
-    return "do nothing"
+    # no change
+    if (
+        preferred_state["num_rows"] == current_state["num_rows"]
+        and last_known_applied_state["data_modified"] < current_state["table_modified"]
+        and last_known_applied_state["schema_modified"]
+        < current_state["table_modified"]
+        and preferred_state["schema_crc32c"] == current_state["schema_crc32c"]
+    ):
+        table_action = "pass"
+
+    # data change
+    if (
+        preferred_state["num_rows"] != current_state["num_rows"]
+        and last_known_applied_state["data_modified"] < current_state["table_modified"]
+        and last_known_applied_state["schema_modified"]
+        < current_state["table_modified"]
+        and preferred_state["schema_crc32c"] == current_state["schema_crc32c"]
+    ):
+        table_action = "upload"
+
+    # schema change
+    if (
+        preferred_state["num_rows"] == current_state["num_rows"]
+        and last_known_applied_state["data_modified"] < current_state["table_modified"]
+        and last_known_applied_state["schema_modified"]
+        < current_state["table_modified"]
+        and preferred_state["schema_crc32c"] != current_state["schema_crc32c"]
+    ):
+
+        table_action = "upload"
+
+    return table_action
 
 
 def decide_actions(
@@ -271,33 +277,25 @@ def decide_actions(
 # this must go to the cli.py
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    "--bucket_prefix",
+    "--bucket-prefix",
     help="Something like: table_loader --bucket-prefix 'gs://bucket_name'",
 )
 args = parser.parse_args()
 
 
 def main(bucket_prefix=args.bucket_prefix):
+
+    print("--------------------------------------")
     preferred_state = get_preferred_state()
-    # print(json.dumps(preferred_state, indent=2))
-    # last_known_applied_state = get_last_known_applied_state(bucket_prefix)
-    # print(json.dumps(last_known_applied_state, indent=2))
-    # current_state = get_current_state()
+    logger.info(preferred_state)
 
-    # preferred_state: typing.Dict[str, PreferredState] = collections.defaultdict(lambda: PreferredState())
-    # preferred_state['p1.d1.t1'] = {"schema_crc32c": "a"}
-    # preferred_state['p1.d1.t2'] = {"schema_crc32c": "a"}
+    print("--------------------------------------")
+    last_known_applied_state = get_last_known_applied_state(bucket_prefix)
+    logger.info(last_known_applied_state)
 
-    last_known_applied_state: typing.Dict[
-        str, LastKnownAppliedState
-    ] = collections.defaultdict(lambda: LastKnownAppliedState())
-    last_known_applied_state["p1.d1.t1"] = {"schema_crc32c": "b"}
-    last_known_applied_state["p1.d1.t2"] = {"schema_crc32c": "b"}
-
-    current_state: typing.Dict[str, CurrentState] = collections.defaultdict(
-        lambda: CurrentState()
-    )
-    current_state["p1.d1.t1"] = {"schema_crc32c": "c"}
+    print("--------------------------------------")
+    current_state = get_current_state()
+    logger.info(current_state)
 
     actions = decide_actions(preferred_state, last_known_applied_state, current_state)
     logger.info(actions)
