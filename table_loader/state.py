@@ -189,65 +189,36 @@ def get_current_state():
     return current_state
 
 
+def is_identical(
+    preferred_state: PreferredState,
+    last_known_applied_state: LastKnownAppliedState,
+    current_state: CurrentState,
+):
+    # iterates through matching keys and compares their values
+    # breaks and returns false if any values do not match
+    return True
+
+
 def decide_table_action(
     preferred_state: PreferredState,
     last_known_applied_state: LastKnownAppliedState,
     current_state: CurrentState,
 ):
     table_action: str = ""
-    """
-    WHAT: upload preferred -> last_known -> current
-    WHEN: new table, schema change, data change
-    HOW:
-
-    WHAT: upload last_known -> current
-    WHEN: preferred and last_known exist, current does not exist
-    HOW:
-
-    WHAT: do nothing - unmanaged table
-    WHEN: last_known does not exist
-    HOW:
-
-    WHAT: delete last_known and current
-    WHEN: preferred doesn't exist, last_known and current exist
-    HOW:
-
-    :param preferred_state:
-    :param last_known_applied_state:
-    :param current_state:
-    :return:
-    """
-
-    # no change
-    if (
-        preferred_state["num_rows"] == current_state["num_rows"]
-        and last_known_applied_state["data_modified"] < current_state["table_modified"]
-        and last_known_applied_state["schema_modified"]
-        < current_state["table_modified"]
-        and preferred_state["schema_crc32c"] == current_state["schema_crc32c"]
-    ):
-        table_action = "pass"
-
-    # data change
-    if (
-        preferred_state["num_rows"] != current_state["num_rows"]
-        and last_known_applied_state["data_modified"] < current_state["table_modified"]
-        and last_known_applied_state["schema_modified"]
-        < current_state["table_modified"]
-        and preferred_state["schema_crc32c"] == current_state["schema_crc32c"]
-    ):
+    if preferred_state and last_known_applied_state and current_state:
+        if (
+            is_identical(preferred_state, last_known_applied_state, current_state)
+            is True
+        ):
+            table_action = "do nothing"
+        else:
+            table_action = "upload"
+    elif not preferred_state and last_known_applied_state:
+        table_action = "delete"
+    elif preferred_state and (not last_known_applied_state or not current_state):
         table_action = "upload"
-
-    # schema change
-    if (
-        preferred_state["num_rows"] == current_state["num_rows"]
-        and last_known_applied_state["data_modified"] < current_state["table_modified"]
-        and last_known_applied_state["schema_modified"]
-        < current_state["table_modified"]
-        and preferred_state["schema_crc32c"] != current_state["schema_crc32c"]
-    ):
-
-        table_action = "upload"
+    else:
+        table_action = "don't know what to do"
 
     return table_action
 
@@ -265,13 +236,22 @@ def decide_actions(
             all_keys.add(k)
 
     for k in all_keys:
-        _, _, table = k.split(".")
+        # _, _, table = k.split(".")
         action = decide_table_action(
-            preferred_state[k], last_known_applied_state[k], current_state[k]
+            validate_state(k, preferred_state),
+            validate_state(k, last_known_applied_state),
+            validate_state(k, current_state),
         )
         all_actions[k] = action
 
     return all_actions
+
+
+def validate_state(table: typing.AnyStr, state: typing.TypedDict):
+    value = state.get(table, None)
+    if not value:
+        return {}
+    return state
 
 
 # this must go to the cli.py
@@ -285,20 +265,21 @@ args = parser.parse_args()
 
 def main(bucket_prefix=args.bucket_prefix):
 
-    print("--------------------------------------")
+    print("-------------------------------------- preferred_state ")
     preferred_state = get_preferred_state()
-    logger.info(preferred_state)
+    # logger.info(preferred_state)
 
-    print("--------------------------------------")
+    print("-------------------------------------- last_known_applied_state")
     last_known_applied_state = get_last_known_applied_state(bucket_prefix)
-    logger.info(last_known_applied_state)
+    # logger.info(last_known_applied_state)
 
-    print("--------------------------------------")
+    print("-------------------------------------- current_state")
     current_state = get_current_state()
-    logger.info(current_state)
+    # logger.info(current_state)
 
     actions = decide_actions(preferred_state, last_known_applied_state, current_state)
-    logger.info(actions)
+    logger.info(json.dumps(actions, indent=2))
+
     #
     # for action in actions:
     #     action()
