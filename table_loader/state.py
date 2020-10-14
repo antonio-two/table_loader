@@ -40,19 +40,18 @@ class PreferredState(typing.TypedDict, total=False):
 class LastKnownAppliedState(typing.TypedDict, total=False):
     schema: object
     schema_crc32c: str
-    schema_modified: datetime
     data_crc32c: str
-    data_modified: datetime
+    modified: datetime
 
 
 class CurrentState(typing.TypedDict, total=False):
     schema: object
     schema_crc32c: str
     num_rows: int
-    table_modified: datetime
+    modified: datetime
 
 
-def make_crc32c(data: str):
+def make_crc32c(data: any):
     """
     This is a bit fiddly.
     crcmod: https://cloud.google.com/storage/docs/gsutil/addlhelp
@@ -63,26 +62,27 @@ def make_crc32c(data: str):
     :return:
     """
     crc32c = crcmod.predefined.Crc("crc-32c")
-    crc32c.update(data.encode("utf-8"))
+    crc32c.update(str(data).encode("utf-8"))
     return base64.b64encode(struct.pack(">I", crc32c.crcValue)).decode("utf-8")
 
 
 def json_from_bigquery_schema(schema_fields: bigquery.schema.SchemaField):
+    """
+    :param schema_fields:
+    :return:
+    """
     json_output: typing.List[dict] = []
     for field in schema_fields:
         json_output.append(
             dict(sorted(field.to_api_repr().items(), key=lambda k: k[0]))
         )
-    return json.dumps(json_output, indent=None)
+    return json.dumps(json_output)
 
 
 def get_preferred_state():
     """
-    A checksum from each file is computed on the fly for both local schema
-    and data files
     :return:
     """
-
     preferred_state: typing.Dict[str, PreferredState] = collections.defaultdict(
         lambda: PreferredState()
     )
@@ -104,7 +104,7 @@ def get_preferred_state():
                 f_content = f.read()
                 if file.endswith(SCHEMA_EXT):
                     state_value["schema"] = json.loads(f_content)
-                    state_value["schema_crc32c"] = make_crc32c(f_content)
+                    state_value["schema_crc32c"] = make_crc32c(state_value["schema"])
                 elif file.endswith(DATA_EXT):
                     state_value["data_crc32c"] = make_crc32c(f_content)
                     state_value["num_rows"] = sum(
@@ -118,8 +118,6 @@ def get_preferred_state():
 
 def get_last_known_applied_state(bucket_prefix: str):
     """
-    A checksum for both schema and data blobs can be retrieved by the
-    storage api
     :param bucket_prefix: gs://bucket_name
     :return:
     """
@@ -144,26 +142,31 @@ def get_last_known_applied_state(bucket_prefix: str):
         state_value = last_known_applied_state[state_key]
 
         modified = str(blob.updated)
+        if state_value.get("modified", "1970-01-01 00:00:00.000000+00:00") < modified:
+            state_value["modified"] = modified
 
         if blob.name.endswith(SCHEMA_EXT):
             # do we need the schema if we have the crc?
             state_value["schema"] = json.loads(blob.download_as_string())
-            state_value["schema_crc32c"] = blob.crc32c
-            state_value["schema_modified"] = modified
+            state_value["schema_crc32c"] = make_crc32c(state_value["schema"])
+
             # Do we need some date conversion magic here?
             # maybe convert everything to UTC based on the location of the data?
             # or just simply leave it for the user to make their own decision
 
         if blob.name.endswith(DATA_EXT):
-            state_value["data_crc32c"] = blob.crc32c
-            state_value["data_modified"] = modified
+            state_value["data_crc32c"] = make_crc32c(
+                "".join(map(chr, blob.download_as_string()))
+            )
 
     return last_known_applied_state
 
 
 # def get_current_state(known_tables: typing.List[str]):
 def get_current_state():
-
+    """
+    :return:
+    """
     current_state: typing.Dict[str, CurrentState] = collections.defaultdict(
         lambda: CurrentState()
     )
@@ -179,12 +182,14 @@ def get_current_state():
                     state_key = ".".join([PROJECT, dataset.dataset_id, table.table_id])
                     state_value = current_state[state_key]
                     table_info = bigquery_client.get_table(state_key)
-                    state_value["schema"] = json_from_bigquery_schema(table_info.schema)
+                    state_value["schema"] = json.loads(
+                        json_from_bigquery_schema(table_info.schema)
+                    )
                     state_value["schema_crc32c"] = make_crc32c(
-                        str(json_from_bigquery_schema(table_info.schema))
+                        json.loads(json_from_bigquery_schema(table_info.schema))
                     )
                     state_value["num_rows"] = table_info.num_rows
-                    state_value["table_modified"] = str(table_info.modified)
+                    state_value["modified"] = str(table_info.modified)
 
     return current_state
 
@@ -194,8 +199,39 @@ def is_identical(
     last_known_applied_state: LastKnownAppliedState,
     current_state: CurrentState,
 ):
-    # iterates through matching keys and compares their values
-    # breaks and returns false if any values do not match
+    """
+    Checks if all states are identical
+    :param preferred_state:
+    :param last_known_applied_state:
+    :param current_state:
+    :return:
+    """
+    keys = distinct_keys(preferred_state, last_known_applied_state, current_state)
+
+    for key in keys:
+        logger.info(f"checking {key}")
+        p_value = preferred_state.get(key, None)
+        k_value = last_known_applied_state.get(key, None)
+        c_value = current_state.get(key, None)
+        if key in ["schema", "schema_crc32c"]:
+            if not p_value == k_value == c_value:
+                logger.info(
+                    f"{key}\npreferred: {p_value}\n last known: {k_value}\ncurrent: {c_value}"
+                )
+                return False
+        elif key == "data_crc32c":
+            if not p_value == k_value:
+                logger.info(f"{key}\npreferred: {p_value}\nlast known: {k_value}")
+                return False
+        elif key == "num_rows":
+            if not p_value == c_value:
+                logger.info(f"{key}\npreferred: {p_value}\ncurrent: {c_value}")
+                return False
+        elif key == "modified":
+            if not (k_value < c_value):
+                logger.info(f"{key}\nlast known: {k_value}\ncurrent: {c_value}")
+                return False
+
     return True
 
 
@@ -204,12 +240,16 @@ def decide_table_action(
     last_known_applied_state: LastKnownAppliedState,
     current_state: CurrentState,
 ):
+    """
+
+    :param preferred_state:
+    :param last_known_applied_state:
+    :param current_state:
+    :return:
+    """
     table_action: str = ""
     if preferred_state and last_known_applied_state and current_state:
-        if (
-            is_identical(preferred_state, last_known_applied_state, current_state)
-            is True
-        ):
+        if is_identical(preferred_state, last_known_applied_state, current_state):
             table_action = "do nothing"
         else:
             table_action = "upload"
@@ -228,30 +268,55 @@ def decide_actions(
     last_known_applied_state: typing.Dict[str, LastKnownAppliedState],
     current_state: typing.Dict[str, CurrentState],
 ) -> typing.List[typing.Callable]:
+    """
 
-    all_keys = set()
-    all_actions = dict()
-    for d in (preferred_state, last_known_applied_state, current_state):
-        for k, _ in d.items():
-            all_keys.add(k)
-
-    for k in all_keys:
-        # _, _, table = k.split(".")
+    :param preferred_state:
+    :param last_known_applied_state:
+    :param current_state:
+    :return:
+    """
+    actions = dict()
+    for k in distinct_keys(preferred_state, last_known_applied_state, current_state):
+        logger.info(f"Checking {k}")
         action = decide_table_action(
             validate_state(k, preferred_state),
             validate_state(k, last_known_applied_state),
             validate_state(k, current_state),
         )
-        all_actions[k] = action
+        actions[k] = action
+    return actions
 
-    return all_actions
 
+def validate_state(table: typing.AnyStr, state: typing.Dict):
+    """
 
-def validate_state(table: typing.AnyStr, state: typing.TypedDict):
+    :param table:
+    :param state:
+    :return:
+    """
     value = state.get(table, None)
     if not value:
         return {}
-    return state
+    return value
+
+
+def distinct_keys(
+    preferred_state,
+    last_known_applied_state,
+    current_state,
+):
+    """
+
+    :param preferred_state:
+    :param last_known_applied_state:
+    :param current_state:
+    :return:
+    """
+    keys = set()
+    for d in (preferred_state, last_known_applied_state, current_state):
+        for k, _ in d.items():
+            keys.add(k)
+    return keys
 
 
 # this must go to the cli.py
@@ -265,21 +330,22 @@ args = parser.parse_args()
 
 def main(bucket_prefix=args.bucket_prefix):
 
-    print("-------------------------------------- preferred_state ")
+    print("\n-------------------------------------- preferred_state\n")
     preferred_state = get_preferred_state()
-    # logger.info(preferred_state)
+    logger.info(preferred_state)
 
-    print("-------------------------------------- last_known_applied_state")
+    print("\n-------------------------------------- last_known_applied_state\n")
     last_known_applied_state = get_last_known_applied_state(bucket_prefix)
-    # logger.info(last_known_applied_state)
+    logger.info(last_known_applied_state)
 
-    print("-------------------------------------- current_state")
+    print("\n-------------------------------------- current_state\n")
     current_state = get_current_state()
-    # logger.info(current_state)
+    logger.info(current_state)
 
+    print("\n-------------------------------------- actions\n")
     actions = decide_actions(preferred_state, last_known_applied_state, current_state)
     logger.info(json.dumps(actions, indent=2))
 
-    #
+    # this goes in the cli code
     # for action in actions:
     #     action()
