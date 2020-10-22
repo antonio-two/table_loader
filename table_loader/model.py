@@ -4,6 +4,7 @@ import dataclasses
 import crcmod.predefined
 import base64
 import json
+import sqlparse
 
 
 class TablePart:  # Abstract
@@ -31,16 +32,18 @@ class Schema(TablePart):
         for field in self.schema:
             pretty_schema.append(
                 {
+                    "description": field.description,
+                    "mode": field.mode,
                     "name": field.name,
                     "type": field.type,
-                    "mode": field.mode,
-                    "description": field.description,
                 }
             )
         return json.dumps(pretty_schema, sort_keys=True, indent=1)
 
     def __repr__(self):
-        return json.loads(self.__str__())
+        # not sure
+        # return json.loads(self.__str__())
+        pass
 
     def __hash__(self):
         crc32c = crcmod.predefined.Crc("crc-32c")
@@ -54,11 +57,38 @@ class Schema(TablePart):
 
 
 class Content(TablePart):
-    payload: typing.Iterable[typing.Dict[str, typing.Any]]
+    def __init__(self, payload):
+        payload: typing.Iterable[typing.Dict[str, typing.Any]]
+
+    def __hash__(self):
+        pass
+
+    def __eq__(self, other):
+        pass
+
+    def num_rows(self):
+        pass
+
+    def num_columns(self):
+        pass
 
 
 class Sql(TablePart):
-    query: str
+    def __init__(self, query: str):
+        self.query = query
+
+    def __str__(self):
+        return sqlparse.format(
+            self.query, reindent=True, keyword_case="upper", strip_comments=True
+        )
+
+    def __hash__(self):
+        return hash(self.__str__())
+
+    def __eq__(self, other):
+        if isinstance(other, Sql):
+            return False
+        return self.__hash__() == other.__hash__()
 
 
 class Meta(TablePart):
@@ -91,18 +121,5 @@ def test_is_data_the_same():
 
 def main():
 
-    identifier = FieldDefinition(
-        description="test desc", mode="REQUIRED", name="IDENTIFIER", type="INTEGER"
-    )
-    name = FieldDefinition(
-        description="test desc", mode="REQUIRED", name="NAME", type="STRING"
-    )
-    s1 = Schema([identifier, name])
-    s2 = Schema([identifier, name])
-    print(s1.__hash__(), s1.__str__())
-    print(s1.__eq__(s2), s1.__hash__(), s2.__hash__())
-    new_name = FieldDefinition(
-        description="test desc blah", mode="REQUIRED", name="NAME", type="STRING"
-    )
-    s3 = Schema([identifier, new_name])
-    print(s1.__eq__(s3), s1.__hash__(), s3.__hash__())
+    s = Sql(query="select * from x as x1 join z as z1 on x1.i = x1.i where x1.a = 1")
+    print(s.__str__())
