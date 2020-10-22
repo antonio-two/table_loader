@@ -25,6 +25,7 @@ pre-commit = "^2.7.1"
 pytest = "^6.1.0"
 
 [tool.poetry.scripts]
+model = "table_loader.model:main"
 table_loader = "table_loader.cli:main"
 table_loader_state = "table_loader.state:main"
 

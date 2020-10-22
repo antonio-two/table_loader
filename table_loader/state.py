@@ -219,11 +219,11 @@ def is_identical(
                     f"{key}\npreferred: {p_value}\n last known: {k_value}\ncurrent: {c_value}"
                 )
                 return False
-        elif key == "data_crc32c":
+        elif key == ["data_crc32c", "schema_crc32c"]:
             if not p_value == k_value:
                 logger.info(f"{key}\npreferred: {p_value}\nlast known: {k_value}")
                 return False
-        elif key == "num_rows":
+        elif key == ["num_rows", "schema"]:
             if not p_value == c_value:
                 logger.info(f"{key}\npreferred: {p_value}\ncurrent: {c_value}")
                 return False
@@ -276,14 +276,16 @@ def decide_actions(
     :return:
     """
     actions = dict()
-    for k in distinct_keys(preferred_state, last_known_applied_state, current_state):
-        logger.info(f"Checking {k}")
+    for table in distinct_keys(
+        preferred_state, last_known_applied_state, current_state
+    ):
+        logger.info(f"Checking {table}")
         action = decide_table_action(
-            validate_state(k, preferred_state),
-            validate_state(k, last_known_applied_state),
-            validate_state(k, current_state),
+            preferred_state.get(table, PreferredState()),
+            last_known_applied_state.get(table, LastKnownAppliedState()),
+            current_state.get(table, CurrentState()),
         )
-        actions[k] = action
+        actions[table] = action
     return actions
 
 
@@ -294,7 +296,7 @@ def validate_state(table: typing.AnyStr, state: typing.Dict):
     :param state:
     :return:
     """
-    value = state.get(table, None)
+    value = state.get(table, {})
     if not value:
         return {}
     return value
@@ -304,7 +306,7 @@ def distinct_keys(
     preferred_state,
     last_known_applied_state,
     current_state,
-):
+) -> typing.Iterable[str]:
     """
 
     :param preferred_state:
