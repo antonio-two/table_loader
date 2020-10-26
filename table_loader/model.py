@@ -1,19 +1,14 @@
-import struct
 import typing
 import dataclasses
-import crcmod.predefined
-import base64
-import json
-import sqlparse
 
 
-class TablePart:  # Abstract
+class TableComponent:  # Abstract
     pass
 
 
 # immutable class with no behaviour
-@dataclasses.dataclass(frozen=True)
-class FieldDefinition(TablePart):
+@dataclasses.dataclass(frozen=True, eq=True, order=True)
+class FieldDefinition:
     name: str
     type: str
     mode: str
@@ -23,83 +18,79 @@ class FieldDefinition(TablePart):
     # policy_tags_names: typing.List[str] = field(default_factory=[])
 
 
-class Schema(TablePart):
+class Schema(TableComponent):
+    # formatting the schema is not part of the domain model
     def __init__(self, schema: typing.Iterable[FieldDefinition]):
-        self.schema = schema
-
-    def __str__(self):
-        pretty_schema = []
-        for field in self.schema:
-            pretty_schema.append(
-                {
-                    "description": field.description,
-                    "mode": field.mode,
-                    "name": field.name,
-                    "type": field.type,
-                }
-            )
-        return json.dumps(pretty_schema, sort_keys=True, indent=1)
-
-    def __repr__(self):
-        # not sure
-        # return json.loads(self.__str__())
-        pass
+        self.schema = tuple(schema)
 
     def __hash__(self):
-        crc32c = crcmod.predefined.Crc("crc-32c")
-        crc32c.update(self.schema.__str__().encode("utf-8"))
-        return base64.b64encode(struct.pack(">I", crc32c.crcValue)).decode("utf-8")
+        return hash(self.schema)
 
     def __eq__(self, other):
         if not isinstance(other, Schema):
             return False
-        return other.__hash__() == self.__hash__()
+        return other.schema == self.schema
 
 
-class Content(TablePart):
-    def __init__(self, payload):
-        payload: typing.Iterable[typing.Dict[str, typing.Any]]
+class Content(TableComponent):
+    # iterating through and hashing the content is not part of the domain model
+    def __init__(self, payload_hash):
+        self.payload_hash = payload_hash
 
     def __hash__(self):
-        pass
+        return hash(self.payload_hash)
 
     def __eq__(self, other):
-        pass
-
-    def num_rows(self):
-        pass
-
-    def num_columns(self):
-        pass
+        if not isinstance(other, Content):
+            return False
+        return other.payload_hash == self.payload_hash
 
 
-class Sql(TablePart):
+class Sql(TableComponent):
+    # formatting the query is not part of the domain model
     def __init__(self, query: str):
         self.query = query
 
-    def __str__(self):
-        return sqlparse.format(
-            self.query, reindent=True, keyword_case="upper", strip_comments=True
-        )
-
     def __hash__(self):
-        return hash(self.__str__())
+        return hash(self.query)
 
     def __eq__(self, other):
         if isinstance(other, Sql):
             return False
-        return self.__hash__() == other.__hash__()
+        return self.query == other.query
 
 
-class Meta(TablePart):
-    # TODO: How do we represent modified date? Is it part of the domain model? or implementation detail?
-    pass
+# how much of that is part of the domain model?
+# e.g what would we do if only the description has changed
+# or if the labels are different?
+# do we need a means to compare the properties to identify equality?
+@dataclasses.dataclass(frozen=True, eq=True, order=True)
+class TableProperty:
+    description: str
+    labels: typing.Dict[str, str]
+    table_id: str
+    # table_size: int
+    rows: int
+    # created: str
+    # table_expiry: str
+    last_modified: str
+    # data_location: str
 
 
 class Grid:  # Abstract naming for table_name in project.dataset.table_name
-    grid_id: str
+    def __init__(self, table_property: TableProperty):
+        self.description = table_property.description
+        self.labels = table_property.labels
+        self.table_id = table_property.table_id
+        # self.table_size = table_property.table_size
+        self.rows = table_property.rows
+        # self.created = table_property.created
+        # self.table_expiry = table_property.table_expiry
+        self.last_modified = table_property.last_modified
+        # self.data_location = table_property.data_location
 
 
+# these classes consist of TableComponent so why not add the grid_id as part of the top abstract TableComponent class?
 class View(Grid):
     sql: Sql
     schema: Schema
@@ -113,13 +104,3 @@ class MaterializedView(Grid):
 class Table(Grid):
     content: Content
     schema: Schema
-
-
-def test_is_data_the_same():
-    pass
-
-
-def main():
-
-    s = Sql(query="select * from x as x1 join z as z1 on x1.i = x1.i where x1.a = 1")
-    print(s.__str__())
