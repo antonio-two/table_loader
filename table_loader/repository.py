@@ -1,34 +1,34 @@
 import abc
-import model
+import typing
+from table_loader import model
 
 
-class AbstractRepository:
+class AbstractTableRepository:
     @abc.abstractmethod
-    def add(
-        self,
-        grid_id: model.Grid,
-        schema: model.Schema,
-        content: model.Content,
-        sql: model.Sql,
-    ):
+    def add(self, table: model.Table):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get(self, grid: model.Grid):
+    def get(self, table_id: str):
         raise NotImplementedError
 
 
-class GridRepository(AbstractRepository):
-    # this is like a memory object containing all the
-    def __init__(self, session):
-        self.session = session
+class TableRepository(AbstractTableRepository):
+    # TODO: how can this be broken out to a fixture?
+    def __init__(self):
+        self.tables_in_memory: typing.Dict[
+            str, typing.List[model.TableProperty, model.Schema, model.Content]
+        ] = {}
 
-    def add(self, grid_id, schema, content, sql):
-        self.grids.add(grid_id=grid_id, schema=schema, content=content, sql=sql)
+    def add(self, table: model.Table):
+        self.tables_in_memory[table.table_property.grid_id] = [
+            table.table_property,
+            table.schema.schema,
+            table.content.payload_hash,
+        ]
 
-    def get(self, grid):
-        return self.grids.get(model.Grid.grid_id)
+    def get(self, table_id: str):
+        return self.tables_in_memory[table_id]
 
     def list(self):
-        # lists all the actions?
-        pass
+        return self.tables_in_memory
