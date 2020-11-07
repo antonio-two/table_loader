@@ -1,4 +1,4 @@
-from table_loader import model
+from table_loader.src.synchronisation.domain import model
 
 
 def test_two_schemas_are_the_same():

@@ -106,9 +106,11 @@ class Table(Grid):
 
 class View(Grid):
     view_property: ViewProperty
+    schema: Schema
     sql: Sql
 
 
 class MaterialisedView(Grid):
     materialised_view_property: MaterialisedViewProperty
+    schema: Schema
     sql: Sql

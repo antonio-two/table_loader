@@ -8,7 +8,7 @@ from uuid import uuid1
 import py._path.local as local_path
 import pytest
 from google.cloud import bigquery
-from table_loader import cli
+from table_loader.src.synchronisation.entrypoints import cli
 
 logger = logging.getLogger(__name__)
 

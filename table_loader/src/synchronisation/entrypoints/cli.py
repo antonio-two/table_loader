@@ -12,22 +12,7 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-SCHEMA_EXT = "json"
-DATA_EXT = "jsonl"
 
-
-def get_tables():
-    pass
-
-
-def get_action_for_table(table: str):
-    return
-
-
-def exec_action_for_table(action, table):
-    return
-
-
-def main():
-
-    pass
+# services.synchronise(
+#     # pass the unit of work
+# )
