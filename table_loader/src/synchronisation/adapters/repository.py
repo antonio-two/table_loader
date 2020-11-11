@@ -5,51 +5,51 @@ could we use this as an abstraction over the idea of memory storage?
 
 import abc
 import typing
-from table_loader.src.synchronisation.domain import model
+from synchronisation.domain import model
+from synchronisation.adapters import repository_loader
 
 
-class AbstractTableRepository:
+class AbstractGridRepository:
     @abc.abstractmethod
-    def add(self, table: model.Table):
+    def add(self, grid_id, grid):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get(self, table_id: str):
+    def get(self, grid_id):
         raise NotImplementedError
 
 
-# this is the state abstraction
-class InMemoryTableRepository(AbstractTableRepository):
-    # TODO: how can this be broken out to a session fixture?
-    # what does the session in class SqlAlchemyRepository(AbstractRepository) refer to
-    # https://www.cosmicpython.com/book/chapter_02_repository.html
-    def __init__(self):
-        self.tables_in_memory: typing.Dict[
-            str, typing.List[model.TableProperty, model.Schema, model.Content]
+class InMemoryGridRepository(AbstractGridRepository):
+    def __init__(self, state_type: str):
+        """
+        :param state_type: preferred | last_known | current
+        """
+        self.state_type = state_type
+        self.grids_in_memory: typing.Dict[
+            str, typing.Union[model.Table, model.View, model.MaterialisedView]
         ] = {}
 
-    def add(self, table: model.Table):
-        self.tables_in_memory[table.table_property.grid_id] = [
-            table.table_property,
-            table.schema.schema,
-            table.content.payload_hash,
-        ]
+    def load_repository(self):
+        return repository_loader.get_preferred_state(self.state_type)
 
-    def get(self, table_id: str):
-        return self.tables_in_memory[table_id]
+    def add(
+        self,
+        grid_id: str,
+        grid: typing.Union[model.Table, model.View, model.MaterialisedView],
+    ):
+        self.grids_in_memory[grid_id] = grid
+
+    def get(self, grid_id: str):
+        return self.grids_in_memory[grid_id]
 
     def list(self):
-        return self.tables_in_memory
+        return self.grids_in_memory
 
-    def create(self):
+    def create_or_replace(self):
         pass
 
-    def update_meta(self):
+    def drop(self):
         pass
 
-    def remove(self):
+    def update_property(self):
         pass
-
-
-class FakeTableRepository(InMemoryTableRepository):
-    pass

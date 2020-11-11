@@ -1,5 +1,5 @@
-from table_loader.src.synchronisation.domain import model
+# from table_loader.src.synchronisation.domain import model
 
 
-def synchronise(grid_id: model.GridProperty.grid_id):
+def synchronise(project: str, bucket_prefix: str):
     pass

@@ -1,0 +1,4 @@
+[console_scripts]
+repository = table_loader.repository:main
+table_loader = table_loader.cli:main
+table_loader_state = table_loader.state:main

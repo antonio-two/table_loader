@@ -1,4 +1,5 @@
 import argparse
+from synchronisation.service_layer import actions  # , uow
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -16,3 +17,7 @@ args = parser.parse_args()
 # services.synchronise(
 #     # pass the unit of work
 # )
+
+
+def main():
+    actions.synchronise(project=args.project, bucket_prefix=args.bucket_prefix)

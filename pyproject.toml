@@ -3,6 +3,9 @@ name = "table_loader"
 version = "0.1.0"
 description = ""
 authors = ["Antonio <antonio.one@pm.me>"]
+packages = [
+    { include = "synchronisation", from = "table_loader/src/" },
+    ]
 
 [tool.poetry.dependencies]
 python = "^3.8"
@@ -26,10 +29,8 @@ pre-commit = "^2.7.1"
 pytest = "^6.1.0"
 
 [tool.poetry.scripts]
-repository = "table_loader.repository:main"
-table_loader = "table_loader.cli:main"
-table_loader_state = "table_loader.state:main"
-
+repository_loader = "synchronisation.adapters.repository_loader:main"
+model = "synchronisation.domain.model:main"
 
 [build-system]
 requires = ["poetry>=0.12"]

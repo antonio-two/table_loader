@@ -1,0 +1,3 @@
+[console_scripts]
+model = synchronisation.domain.model:main
+repository_loader = synchronisation.adapters.repository_loader:main
