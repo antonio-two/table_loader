@@ -1,36 +1,35 @@
-"""
-in cosmic python this is an abstraction over the idea of persistent (?) storage
-could we use this as an abstraction over the idea of memory storage?
-"""
-
 import abc
 import typing
 from synchronisation.domain import model
-from synchronisation.adapters import repository_loader
 
 
 class AbstractGridRepository:
     @abc.abstractmethod
-    def add(self, grid_id, grid):
+    def add(
+        self,
+        grid_id: str,
+        grid: typing.Union[model.Table, model.View, model.MaterialisedView],
+    ):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get(self, grid_id):
+    def get(self, grid_id: str):
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def list(self):
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def remove(self, grid_id: str):
         raise NotImplementedError
 
 
-class InMemoryGridRepository(AbstractGridRepository):
-    def __init__(self, state_type: str):
-        """
-        :param state_type: preferred | last_known | current
-        """
-        self.state_type = state_type
+class FakeGridRepository(AbstractGridRepository):
+    def __init__(self):
         self.grids_in_memory: typing.Dict[
             str, typing.Union[model.Table, model.View, model.MaterialisedView]
         ] = {}
-
-    def load_repository(self):
-        return repository_loader.get_preferred_state(self.state_type)
 
     def add(
         self,
@@ -45,11 +44,59 @@ class InMemoryGridRepository(AbstractGridRepository):
     def list(self):
         return self.grids_in_memory
 
-    def create_or_replace(self):
+    def remove(self, grid_id: str):
+        self.grids_in_memory.pop(grid_id)
+
+
+class FilesystemGridRepository(AbstractGridRepository):
+    def add(
+        self,
+        grid_id: str,
+        grid: typing.Union[model.Table, model.View, model.MaterialisedView],
+    ):
         pass
 
-    def drop(self):
+    def get(self, grid_id: str):
         pass
 
-    def update_property(self):
+    def list(self):
+        pass
+
+    def remove(self, grid_id: str):
+        pass
+
+
+class BigqueryGridRepository(AbstractGridRepository):
+    def add(
+        self,
+        grid_id: str,
+        grid: typing.Union[model.Table, model.View, model.MaterialisedView],
+    ):
+        pass
+
+    def get(self, grid_id: str):
+        pass
+
+    def list(self):
+        pass
+
+    def remove(self, grid_id: str):
+        pass
+
+
+class GoogleCloudStorageGridRepository(AbstractGridRepository):
+    def add(
+        self,
+        grid_id: str,
+        grid: typing.Union[model.Table, model.View, model.MaterialisedView],
+    ):
+        pass
+
+    def get(self, grid_id: str):
+        pass
+
+    def list(self):
+        pass
+
+    def remove(self, grid_id: str):
         pass
