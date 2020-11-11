@@ -49,6 +49,9 @@ class FakeGridRepository(AbstractGridRepository):
 
 
 class FilesystemGridRepository(AbstractGridRepository):
+    def __init__(self):
+        pass
+
     def add(
         self,
         grid_id: str,
@@ -67,6 +70,9 @@ class FilesystemGridRepository(AbstractGridRepository):
 
 
 class BigqueryGridRepository(AbstractGridRepository):
+    def __init__(self):
+        pass
+
     def add(
         self,
         grid_id: str,
@@ -85,6 +91,9 @@ class BigqueryGridRepository(AbstractGridRepository):
 
 
 class GoogleCloudStorageGridRepository(AbstractGridRepository):
+    def __init__(self):
+        pass
+
     def add(
         self,
         grid_id: str,
