@@ -35,39 +35,15 @@ class Schema(GridComponent):
     def __init__(self, schema: typing.Iterable[FieldDefinition] = None):
         self.schema = tuple(schema)
 
-    # def __hash__(self):
-    #     return hash(self.schema)
-    #
-    # def __eq__(self, other):
-    #     if not isinstance(other, Schema):
-    #         return False
-    #     return other.schema == self.schema
-
 
 class Content(GridComponent):
     def __init__(self, payload_hash: str = None):
         self.payload_hash = payload_hash
 
-    # def __hash__(self):
-    #     return hash(self.payload_hash)
-    #
-    # def __eq__(self, other):
-    #     if not isinstance(other, Content):
-    #         return False
-    #     return other.payload_hash == self.payload_hash
-
 
 class Sql(GridComponent):
     def __init__(self, query: str = None):
         self.query = query
-
-    # def __hash__(self):
-    #     return hash(self.query)
-    #
-    # def __eq__(self, other):
-    #     if isinstance(other, Sql):
-    #         return False
-    #     return self.query == other.query
 
 
 # @dataclasses.dataclass(frozen=True, eq=True, order=True)
@@ -93,16 +69,3 @@ class MaterialisedView(Grid, Schema, Sql):
         super().__init__()
         self.refresh_enabled = refresh_enabled
         self.refresh_interval = refresh_interval
-
-
-# def main():
-#     t1 = Grid()
-#     t1.grid_id = "alfa"
-#     print(f"{t1.grid_id=}")
-#
-#     t2 = Table()
-#     t2.grid_id = "beta"
-#
-#     t2.labels = {}
-#     t2.payload_hash = "bah"
-#     print(f"{t2.grid_id=}, {t2.rows=}, {t2.description=}, {t2.labels=}")
