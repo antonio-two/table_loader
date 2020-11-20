@@ -9,25 +9,30 @@ from google.cloud import bigquery, storage
 
 class AbstractGridRepository:
     @abc.abstractmethod
-    def add(self, **kwargs):
+    def add(self, *args):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get(self, **kwargs):
+    def get(self, *args):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def list(self, **kwargs):
+    def list(self, *args):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def remove(self, **kwargs):
+    def remove(self, *args):
         raise NotImplementedError
 
 
 class FilesystemGridRepository(AbstractGridRepository):
-    def add(self):
-        return NotImplementedError
+    def __init__(self, root: pathlib.Path):
+        # do we even need root here?
+        self.root = root
+
+    def add(self, target_path: bytes, content: str):
+        with open(target_path, "w") as tp:
+            tp.write(content)
 
     def get(self, source_path: pathlib.Path):
         with open(source_path, "r") as f:
@@ -43,25 +48,27 @@ class FilesystemGridRepository(AbstractGridRepository):
 class GoogleCloudStorageGridRepository(AbstractGridRepository):
     def __init__(self, bucket_name: str):
         self.client = storage.Client()
+        self.bucket_name = bucket_name
         self.bucket = self.client.bucket(bucket_name)
 
-    def add(self, source_path: pathlib.Path, target_url: str):
+    def add(self, source_path: str, target_url: str):
         blob = self.bucket.blob(target_url)
         blob.upload_from_filename(source_path)
 
     def get(self, source_url: str):
         return self.bucket.blob(source_url)
 
-    def list(self, directory_url: str):
-        return self.client.list_blobs(directory_url)
+    def list(self, prefix: str):
+        return self.client.list_blobs(bucket_or_name=self.bucket_name, prefix=prefix)
 
-    def remove(self, target_url: str):
-        blob = self.bucket(target_url)
+    def remove(self, target_postfix: str):
+        blob = self.bucket.blob(target_postfix)
         blob.delete()
 
 
 class BigqueryGridRepository(AbstractGridRepository):
-    def __init__(self):
+    def __init__(self, billing_project: str):
+        self.billing_project = billing_project
         self.client = bigquery.Client()
 
     def add(self, grid_id, schema, sql_query, data_uri):
