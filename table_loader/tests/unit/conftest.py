@@ -25,12 +25,12 @@ def preferred_root(tmpdir: local) -> local:
 
 
 @pytest.fixture(scope="session")
-def dataset_name():
+def dataset_name() -> str:
     return str(uuid1()).partition("-")[0]
 
 
 @pytest.fixture(scope="session")
-def table_name():
+def table_name() -> str:
     return "standard_table"
 
 
@@ -48,3 +48,8 @@ def dataset_id(project_id: str, dataset_name):
 @pytest.fixture(scope="session")
 def table_id(dataset_id: str, table_name: str):
     return f"{dataset_id}.{table_name}"
+
+
+@pytest.fixture(scope="session")
+def grid_id(project_id, dataset_name, table_name):
+    return f"{project_id}.{dataset_name}.{table_name}"

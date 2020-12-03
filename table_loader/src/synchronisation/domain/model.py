@@ -1,17 +1,22 @@
 import typing
 import dataclasses
+import simplejson as json
 
 
 class Grid:
-    def __init__(
-        self,
-        grid_id: str = None,
-        description: str = "Not Set",
-        labels: typing.Dict[str, str] = {},
-    ):
-        self.grid_id = grid_id
-        self.description = description
-        self.labels = labels
+    grid_id: str
+    description: str = ""
+    labels: typing.Dict[str, str] = {}
+    modification_date: str = ""
+
+    def is_metadata_unchanged(self, other):
+        if not isinstance(other, Grid):
+            return False
+        return (
+            self.description == other.description
+            and self.labels == other.labels
+            and self.modification_date == other.modification_date
+        )
 
 
 class GridComponent:
@@ -31,41 +36,60 @@ class FieldDefinition:
     # policy_tags_names: typing.List[str]
 
 
-class Schema(GridComponent):
-    def __init__(self, schema: typing.Iterable[FieldDefinition] = None):
-        self.schema = tuple(schema)
+class SchemaMixin(GridComponent):
+    schema: typing.List[typing.Dict] = []
+
+    def set_schema_from_json(self, json_schema: typing.List[typing.Dict]):
+        self.schema.clear()
+        self.schema = json_schema
+
+    def get_schema_json(self):
+        return json.dumps(self.schema)
+
+    def get_field_definitions(self):
+        # TODO: is there a way to abstract the field_definitions population
+        field_definitions: typing.List[FieldDefinition] = []
+        for field in self.schema:
+            field_definitions.append(
+                FieldDefinition(
+                    name=field["name"],
+                    type=field["type"],
+                    mode=field["mode"],
+                    description=field["description"],
+                )
+            )
+        return field_definitions
 
 
-class Content(GridComponent):
-    def __init__(self, payload_hash: str = None):
-        self.payload_hash = payload_hash
+class ContentMixin(GridComponent):
+    # TODO: should we move the hashing into the model or is it an implementation detail?
+    payload_hash: typing.Optional[str] = ""
+    payload: typing.Optional[typing.Iterable[dict]] = []
 
 
-class Sql(GridComponent):
-    def __init__(self, query: str = None):
-        self.query = query
+class SqlMixin(GridComponent):
+    query: typing.Optional[str]
 
 
-# @dataclasses.dataclass(frozen=True, eq=True, order=True)
-class Table(Grid, Schema, Content):
-    def __init__(self, rows: int = None):
-        super().__init__()
-        self.rows = rows
+class Table(Grid, SchemaMixin, ContentMixin):
+    rows: typing.Optional[int] = 0
 
-    def __repr__(self):
+    def __eq__(self, other):
+        if not isinstance(other, Table):
+            return False
         return (
-            f"{self.grid_id=}, {self.description=}, {self.labels=}, "
-            f"{self.rows=}, {self.schema=}, {self.payload_hash=}"
+            self.grid_id == other.grid_id
+            and self.schema == other.schema
+            and self.payload == other.payload
+            and self.payload_hash == other.payload_hash
+            and self.rows == other.rows
         )
 
 
-class View(Grid, Schema, Sql):
-    def __init__(self):
-        super().__init__()
+class View(Grid, SchemaMixin, SqlMixin):
+    pass
 
 
-class MaterialisedView(Grid, Schema, Sql):
-    def __init__(self, refresh_enabled: bool = True, refresh_interval: int = 1800000):
-        super().__init__()
-        self.refresh_enabled = refresh_enabled
-        self.refresh_interval = refresh_interval
+class MaterialisedView(Grid, SchemaMixin, SqlMixin):
+    refresh_enabled: bool = True
+    refresh_interval: int = 1800000
