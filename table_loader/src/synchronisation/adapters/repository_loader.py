@@ -33,6 +33,7 @@ def make_crc32c(data: any):
     return base64.b64encode(struct.pack(">I", crc32c.crcValue)).decode("utf-8")
 
 
+# Should we have the table as a create statement for consistency purposes with the view / materialised view?
 def is_table(project: str, dataset: str, grid_name: str):
     expected_file_name = os.path.join(
         os.getcwd(), "projects", project, dataset, f"{grid_name}.jsonl"
@@ -47,6 +48,7 @@ def is_view(project: str, dataset: str, grid_name: str):
     if os.path.isfile(expected_file_name):
         with open(expected_file_name, "r") as efn:
             # this is not enough
+            # statements = ["create view", "create or replace view"]
             return efn.read().startswith("create or replace view")
     return False
 

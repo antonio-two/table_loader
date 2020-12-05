@@ -10,8 +10,24 @@ def decide_table_action():
 
 
 def decide_actions(preferred_state, last_known, current):
-    actions: typing.Dict[str, str] = {}
+    actions: typing.Dict[str, typing.Callable] = {}
     return actions
+
+
+def create():
+    pass
+
+
+def replace():
+    pass
+
+
+def update():
+    pass
+
+
+def delete():
+    pass
 
 
 def synchronise(project: str, bucket_prefix: str):
@@ -26,4 +42,5 @@ def synchronise(project: str, bucket_prefix: str):
         )
 
         for grid_id, action in actions.items():
-            pass
+            action()
+            # call the message bus instead?

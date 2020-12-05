@@ -1,10 +1,12 @@
-import abc
+# import inspect
 import os
 import pathlib
 
-# import typing
 # from synchronisation.domain import model
+import typing
 from google.cloud import bigquery, storage
+from synchronisation.domain import model
+import abc
 
 
 class AbstractGridRepository:
@@ -30,13 +32,56 @@ class FilesystemGridRepository(AbstractGridRepository):
         # do we even need root here?
         self.root = root
 
-    def add(self, target_path: bytes, content: str):
-        with open(target_path, "w") as tp:
-            tp.write(content)
+    def grid_to_path_prefix(self, grid_id):
+        return self.root.joinpath(grid_id.split("."))
 
-    def get(self, source_path: pathlib.Path):
-        with open(source_path, "r") as f:
-            return f.read()
+    def add(self, grid: model.Grid):
+        prefix = self.grid_to_path_prefix(grid.id)
+        description_path = f"{prefix}.description"
+        with open(description_path, "wt") as fd:
+            fd.write(grid.description)
+        if isinstance(grid, model.Content):
+            content_path = f"{prefix}.jsonl"
+            # Serialise content to json lines
+            content_lines = grid.content  # TODO
+            with open(content_path, "wt") as fd:
+                fd.write(content_lines)
+        if isinstance(grid, model.Sql):
+            sql_path = f"{prefix}.sql"
+            with open(sql_path, "wt") as fd:
+                fd.write(grid.query)
+        if isinstance(grid, model.Schema):
+            schema_path = f"{prefix}.json"
+            json_schema = grid.schema  # TODO
+            with open(schema_path, "wt") as fd:
+                # Serialise schema to json
+                fd.write(json_schema)
+
+    def matching_files_from_grid_id(self, grid_id):
+        prefix = self.grid_to_path_prefix(grid_id)
+        dirname = os.path.dirname(prefix)
+        grid_name = os.path.basename(prefix)
+        for _, _, files in os.walk(dirname):
+            for file in files:
+                if file.startswith(f"{grid_name}."):
+                    yield f"{dirname}/{file}"
+
+    def type_from_files(self, files: typing.Iterable[str]):
+        required_mixins = set()
+        for file in files:
+            if file.endswith("jsonl"):
+                required_mixins.add(model.Content)
+            if file.endswith("json"):
+                required_mixins.add(model.Schema)
+        for subclass in model.Grid.__subclasses__():
+            if set(subclass.__mro__).issuperset(required_mixins):
+                return subclass
+        return ValueError(f"Unable to extract type from files {files}")
+
+    def get(self, grid_id: str) -> model.Grid:
+        grid_files = self.matching_files_from_grid_id(grid_id)
+        cls = self.type_from_files(grid_files)
+        return cls()
 
     def list(self, dataset_path: pathlib.Path):
         return os.listdir(dataset_path)

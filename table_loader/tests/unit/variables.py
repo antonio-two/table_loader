@@ -56,7 +56,7 @@ FIELD_DEFINITIONS_2 = [
     ),
 ]
 
-
 DESCRIPTION = "This is a description"
 LABELS = {"label 1": "label 1 content"}
-MODIFICATION_DATE = "2020-12-31 00:00:00"
+MODIFICATION_DATE_1 = "2019-12-31 00:00:00"
+MODIFICATION_DATE_2 = "2020-12-31 00:00:00"

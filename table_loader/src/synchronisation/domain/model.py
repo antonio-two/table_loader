@@ -11,12 +11,18 @@ class Grid:
 
     def is_metadata_unchanged(self, other):
         if not isinstance(other, Grid):
-            return False
-        return (
-            self.description == other.description
-            and self.labels == other.labels
-            and self.modification_date == other.modification_date
-        )
+            raise NotImplementedError()
+        return self.description == other.description and self.labels == other.labels
+
+    def __gt__(self, other):
+        if not isinstance(other, Grid):
+            raise NotImplementedError()
+        return self.modification_date > other.modification_date
+
+    def __lt__(self, other):
+        if not isinstance(other, Grid):
+            raise NotImplementedError()
+        return self.modification_date < other.modification_date
 
 
 class GridComponent:
@@ -38,10 +44,6 @@ class FieldDefinition:
 
 class SchemaMixin(GridComponent):
     schema: typing.List[typing.Dict] = []
-
-    def set_schema_from_json(self, json_schema: typing.List[typing.Dict]):
-        self.schema.clear()
-        self.schema = json_schema
 
     def get_schema_json(self):
         return json.dumps(self.schema)
@@ -75,6 +77,7 @@ class Table(Grid, SchemaMixin, ContentMixin):
     rows: typing.Optional[int] = 0
 
     def __eq__(self, other):
+        # TODO: if payload exists in both compare it etc
         if not isinstance(other, Table):
             return False
         return (

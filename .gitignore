@@ -4,3 +4,4 @@ __pycache__
 .notes
 .pytest_cache
 .old
+/table_loader/src/table_loader.egg-info/*
